@@ -1,0 +1,3 @@
+[submodule "minicat"]
+	path = minicat
+	url = git@github.com:SolarLiner/minicat.git

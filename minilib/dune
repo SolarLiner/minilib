@@ -1,0 +1,4 @@
+(library
+ (public_name minilib)
+ (name minilib)
+ (libraries minicat))
