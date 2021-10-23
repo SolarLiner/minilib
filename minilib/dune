@@ -1,4 +1,4 @@
 (library
  (public_name minilib)
  (name minilib)
- (libraries minicat))
+ (libraries minicat minicat_ext))
