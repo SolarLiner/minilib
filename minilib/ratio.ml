@@ -45,10 +45,15 @@ end
 module Make (I : Integer.INTEGER) = struct
   module Inner = MakeInner (I)
 
-  include Integer.Make (struct
+  include Num.Make (struct
     include Inner
-    include Ord.StructOrd (Inner)
   end)
+
+  include Ord.StructOrd (Inner)
+
+  let div a (Inner.R (a', b')) = mul a (Inner.R (b', a'))
+
+  let ( / ) = div
 
   let make n d = Inner.R (n, d)
 
