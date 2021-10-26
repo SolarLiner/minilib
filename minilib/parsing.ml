@@ -18,7 +18,9 @@ module Inner = struct
     | Parse (cont, input') -> parse cont input'
     | Match (x, _) -> Result.Ok x
 
-  let empty = P (fun _ -> Error ("empty parse", 0))
+  let fail s = P (fun _ -> Error (s, 0))
+
+  let empty = fail "Empty parse"
 
   let pure a = P (fun _ -> Match (a, 0))
 

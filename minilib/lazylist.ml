@@ -5,6 +5,8 @@ module Inner = struct
 
   let empty = Nil
 
+  let fail _ = Nil
+
   let cons x xs = Cons (lazy x, lazy xs)
 
   let pure a = Cons (lazy a, lazy Nil)
