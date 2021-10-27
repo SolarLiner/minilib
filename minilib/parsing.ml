@@ -134,7 +134,7 @@ let rec span (Inner.P p) =
   Inner.P inner
 
 let ( --> ) pred p =
-  let> x, s = span p in
+  let* x, s = span p in
   if pred x then pure x
   else
     fail (Printf.sprintf "Unexpected %S" (Lazylist.to_seq s |> String.of_seq))
@@ -177,7 +177,7 @@ include struct
   let digit =
     let pred = function '0' .. '9' -> true | _ -> false in
     let inner =
-      let> c = any in
+      let* c = any in
       Printf.eprintf "trace: digit: got %c\n" c;
       return c
     in
@@ -204,7 +204,7 @@ module Sexp = struct
   let parens p = surround (char '(') (char ')' |> token) p
 
   let atom =
-    (let$ s = token ident in
+    (let+ s = token ident in
      Atom s)
     <|> fail "Expected atom"
 
@@ -217,8 +217,8 @@ module Sexp = struct
   let sexp =
     fix (fun sexp ->
         parens
-          (let> name = token ident in
-           let$ args = many sexp in
+          (let* name = token ident in
+           let+ args = many sexp in
            Call (name, args))
         <|> atom)
     |> token
