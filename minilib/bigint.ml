@@ -129,7 +129,7 @@ module Inner = struct
     let r =
       let a' = Bytes.to_seq a |> Seq.map int_of_char |> List.of_seq in
       let b' = Bytes.to_seq b |> Seq.map int_of_char |> List.of_seq in
-      let open Minicat_ext.List_ext in
+      let open Monad.Make (Minicat_ext.List_ext) in
       let> x = a' in
       let> y = b' in
       Printf.eprintf "%d * %d = %d; " x y (x * y);
