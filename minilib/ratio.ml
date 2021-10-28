@@ -1,7 +1,7 @@
 open Minicat
 
 module Make (I : Integer.INTEGER) : sig
-  include Num.NUM
+  include Integer.INTEGER
 
   include Ord.ORD with type t := t
 
@@ -23,7 +23,7 @@ end = struct
 
   let equal (R (n, d)) (R (n', d')) = I.equal n n' && I.equal d d'
 
-  let compare (R (n, d)) (R (n', d')) = failwith "Ratio: todo"
+  let compare _ _ = failwith "Ratio: todo"
 
   let of_string s =
     match String.split_on_char '/' s with

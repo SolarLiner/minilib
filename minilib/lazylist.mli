@@ -8,6 +8,12 @@ include Alternative.ALTERNATIVE with type 'a t := 'a t
 
 include Cons.CONS with type 'a t := 'a t
 
+include Foldable.FOLDABLE with type 'a t := 'a t
+
+include Unfoldable.UNFOLDABLE with type 'a t := 'a t
+
+val first : 'a t -> 'a option
+
 val from_lazy : 'a lazy_t -> 'a t
 
 val append_lazy : 'a t -> 'a lazy_t -> 'a t
@@ -35,6 +41,8 @@ val length : 'a t -> int
 val is_empty : 'a t -> bool
 
 val foldr_lazy : ('a lazy_t -> 'b -> 'b) -> 'a t -> 'b -> 'b
+
+val next : 'a t -> ('a * 'a t) option
 
 val take : int -> 'a t -> 'a t
 

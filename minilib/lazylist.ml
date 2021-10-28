@@ -1,4 +1,6 @@
-type 'a t = Nil | Cons of 'a Lazy.t * 'a t Lazy.t
+type 'a llist = Nil | Cons of 'a Lazy.t * 'a llist Lazy.t
+
+type 'a t = 'a llist
 
 let empty = Nil
 
@@ -7,6 +9,10 @@ let fail _ = Nil
 let cons x xs = Cons (lazy x, lazy xs)
 
 let pure a = Cons (lazy a, lazy Nil)
+
+let extract = function
+  | Nil -> failwith "extract: Empty lazylist"
+  | Cons (x, _) -> Lazy.force x
 
 let rec map f = function
   | Nil -> Nil
@@ -34,10 +40,17 @@ let rec bind m f =
 
 let alt = concat
 
+let extend f (l : 'a t) = pure (f l)
+
 let rec fold_right f l i =
   match l with
   | Nil -> i
   | Cons (x, xs) -> f (Lazy.force x) (fold_right f (Lazy.force xs) i)
+
+let rec unfold_right f i =
+  match f i with
+  | None -> Nil
+  | Some (x, n) -> Cons (lazy x, lazy (unfold_right f n))
 
 (* Create a singleton list from an already lazy value *)
 let from_lazy l = Cons (l, lazy Nil)
@@ -50,6 +63,13 @@ let rec append_lazy xs x =
 
 (* Append a strict value on the lazy list. *)
 let append xs x = append_lazy xs (Lazy.from_val x)
+
+(* Return the first value of the [Lazylist], if it exists. *)
+let first = function Nil -> None | Cons (x, _) -> Some (Lazy.force x)
+
+let next = function
+  | Nil -> None
+  | Cons (x, xs) -> Some (Lazy.force x, Lazy.force xs)
 
 (* Force the evaluation of the spine of a list (its structure) but not the values within (that is, its Weak-Head Normal Form).
    This explicitely converts out of a Lazylist into a regular List, but with lazy values inside,
