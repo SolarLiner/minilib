@@ -59,7 +59,7 @@ let from_lazy l = Cons (l, lazy Nil)
 let rec append_lazy xs x =
   match xs with
   | Nil -> from_lazy x
-  | Cons (x, xs) -> Cons (x, lazy (append_lazy (Lazy.force xs) x))
+  | Cons (x', xs) -> Cons (x', lazy (append_lazy (Lazy.force xs) x))
 
 (* Append a strict value on the lazy list. *)
 let append xs x = append_lazy xs (Lazy.from_val x)

@@ -8,15 +8,26 @@ module Inner = struct
   type 'a reply =
     | Error of (string * offset)
     | Match of ('a * offset)
-    | Parse of 'a t * stream
+    | Parse of (offset * 'a t * stream)
 
   and 'a t = stream -> 'a reply
 
-  let rec parse p input =
-    match p input with
-    | Error err -> Result.Error err
-    | Parse (cont, input') -> parse cont input'
+  let update_offset off = function
+    | Error (err, off') -> Error (err, off + off')
+    | Match (x, off') -> Match (x, off + off')
+    | Parse (off', cont, input') -> Parse (off + off', cont, input')
+
+  let get_result = function
+    | Error (err, off) -> Result.Error (err, off)
     | Match (x, _) -> Result.Ok x
+    | Parse _ -> assert false
+
+  let rec parse_raw p input =
+    match p input with
+    | Parse (off, cont, input') -> parse_raw cont input' |> update_offset off
+    | x -> x
+
+  let parse p input = parse_raw p input |> get_result
 
   let fail s _ = Error (s, 0)
 
@@ -24,34 +35,26 @@ module Inner = struct
 
   let pure a _ = Match (a, 0)
 
-  let rec map f p =
-    let mapinner = function
-      | Error _ as err -> err
-      | Match (x, off) -> Match (f x, off)
-      | Parse (cont, stream) -> Parse (map f cont, stream)
-    in
-    fun input -> p input |> mapinner
+  let[@inline] rec map f p input =
+    match p input with
+    | Error _ as err -> err
+    | Match (x, off) -> Match (f x, off)
+    | Parse (off, cont, stream) -> Parse (off, map f cont, stream)
 
   let rec app f x input =
     match f input with
-    | Error err -> Error err
-    | Parse (cont, input') -> Parse (app cont x, input')
-    | Match (f, off) -> (
-        let rest = Lazylist.skip off input in
-        match x rest with
-        | Error err -> Error err
-        | Parse (cont, rest') -> Parse (map f cont, rest')
-        | Match (x, off') -> Match (f x, off + off'))
+    | Error _ as err -> err
+    | Parse (off, cont, input') -> Parse (off, app cont x, input')
+    | Match (f, off) -> Parse (off, map f x, Lazylist.skip off input)
 
-  let rec bind m f input =
+  (* FIXME: Rigorous updating of offsets (with parse_raw ?) + Make [Parse] also include offset details *)
+  let[@inline] rec bind m f input =
     match m input with
-    | Error err -> Error err
-    | Match (x, off) -> (
-        match (f x) (Lazylist.skip off input) with
-        | Match (x', off') -> Match (x', off + off')
-        | Error (err, off') -> Error (err, off + off')
-        | x -> x)
-    | Parse (cont, stream) -> Parse (bind cont f, stream)
+    | Error _ as err -> err
+    | Match (x, off) ->
+        Parse (off, f x, Lazylist.skip off input)
+    | Parse (off, cont, input') ->
+        Parse (off, bind cont f, input')
 
   (* let alt (P a) (P b) =
      let inner input =
@@ -59,12 +62,11 @@ module Inner = struct
        c (a input)
      in
      P inner *)
-  let alt a b input =
-    match a input with
-    | Error (err, off) ->
-        Printf.eprintf "Skipping error %S at offset %d\n" err off;
-        b input
-    | x -> x
+  let[@inline] alt a b input =
+    match parse_raw a input with
+    | Match _ as m -> m
+    | Error _ -> b input
+    | _ -> assert false
 end
 
 include Inner
@@ -72,8 +74,6 @@ include Inner
 open Monad.Make (Inner)
 
 open Alternative.Make (Inner)
-
-let parse = Inner.parse
 
 let parse_string p s = parse p (String.to_seq s |> Lazylist.of_seq)
 
@@ -99,28 +99,29 @@ let parse_file p filepath =
      fix' (fun f' input ->
          match f input with Inner.Parse (cont, input') -> f f' input' | x -> x) *)
 
-let fix f input =
-  match f empty input with Parse (f', input') -> f f' input' | x -> x
+let rec fix f input = f (fix f) input
 
 let eof input =
   if Lazylist.is_empty input then Inner.Match ((), 0)
   else Error ("Expected EOF", 0)
 
 let any input =
-  match Lazylist.next input with
-  | Some (c, input') ->
-      Printf.eprintf "trace: any: %C\n" c;
-      Inner.Parse (return c, input')
+  match Lazylist.first input with
+  | Some c ->
+      Match (c, 1)
   | None -> Error ("Unexpected EOF", 1)
 
 let peek input =
   match Lazylist.first input with
   | None -> Error ("Unexpected EOF", 1)
-  | Some x -> Parse (return x, input)
+  | Some x -> Match (x, 0)
 
-let rec advance = function
-  | n when n <= 0 -> pure ()
-  | n -> any *> advance (n - 1)
+let advance n _ = Match ((), n)
+
+let read n input =
+  let value = Lazylist.take n input |> Lazylist.to_seq |> String.of_seq in
+  if String.length value = n then Match (value, n)
+  else Error (Printf.sprintf "read(%d): Unexpected EOF" n, String.length value)
 
 let rec span p input =
   match p input with
@@ -128,9 +129,9 @@ let rec span p input =
   | Inner.Match (x, off) ->
       Inner.Match
         ((x, Lazylist.take off input |> Lazylist.to_seq |> String.of_seq), off)
-  | Inner.Parse (p, input') -> Inner.Parse (span p, input')
+  | Inner.Parse (off, p, input') -> Inner.Parse (off, span p, input')
 
-let ( --> ) pred p =
+let where pred p =
   let* x, s = span p in
   if pred x then pure x else fail (Printf.sprintf "Unexpected %S" s)
 
@@ -144,43 +145,42 @@ let ( <?> ) p s = label s p
 module WithOrd (O : Ord.ORD) = struct
   open Ord.Make (O)
 
-  let elem el p = ( == ) el --> p
+  let elem el p = where (( == ) el) p
 end
 
 include struct
   open WithOrd (Ord.StructOrd (Char))
 
-  let char c = elem c any <|> fail (Printf.sprintf "Unexpected char %C" c)
+  let char c = elem c any <?> Printf.sprintf "char %C" c
 
   let keyword s =
-    label ("keyword " ^ s)
-      (String.to_seq s |> Seq.map char |> List.of_seq |> sequence
-     |> map List.to_seq |> map String.of_seq)
+    let* v = read (String.length s) in
+    guard ~message:(Printf.sprintf "Expected keyword %S" s) (pure (s = v))
+    >> pure v
 
   let loweralpha =
     let pred = function 'a' .. 'z' -> true | _ -> false in
-    pred --> any
+    where pred any
 
   let upperalpha =
     let pred = function 'A' .. 'Z' -> true | _ -> false in
-    pred --> any
+    where pred any
 
   let alpha = loweralpha <|> upperalpha <?> "alpha"
 
   let digit =
     let pred = function '0' .. '9' -> true | _ -> false in
     let inner =
-      let* c = any in
-      Printf.eprintf "trace: digit: got %c\n" c;
-      return c
+      let+ c = any in
+      c
     in
-    pred --> inner <?> "digit"
+    where pred inner <?> "digit"
 
   let alphanum = alpha <|> digit <?> "alphanumeric"
 
   let space =
     let pred = function ' ' | '\t' | '\n' -> true | _ -> false in
-    pred --> any
+    where pred any
 
   let token p = many space *> p
 end

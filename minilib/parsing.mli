@@ -4,11 +4,19 @@ include Monad.MONAD
 
 include Alternative.ALTERNATIVE with type 'a t := 'a t
 
+type stream
+
+type offset = int
+
+type 'a reply
+
 val parse : 'a t -> char Lazylist.t -> ('a, string * int) result
 
 val parse_string : 'a t -> string -> ('a, string * int) result
 
 val parse_file : 'a t -> string -> ('a, string * int) result
+
+val parse_raw : 'a t -> char Lazylist.t -> 'a reply
 
 val fix : ('a t -> 'a t) -> 'a t
 
@@ -22,7 +30,7 @@ val advance : int -> unit t
 
 val span : 'a t -> ('a * string) t
 
-val ( --> ) : ('a -> bool) -> 'a t -> 'a t
+val where : ('a -> bool) -> 'a t -> 'a t
 
 val label : string -> 'a t -> 'a t
 
