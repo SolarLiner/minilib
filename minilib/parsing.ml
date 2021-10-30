@@ -51,10 +51,8 @@ module Inner = struct
   let[@inline] rec bind m f input =
     match m input with
     | Error _ as err -> err
-    | Match (x, off) ->
-        Parse (off, f x, Lazylist.skip off input)
-    | Parse (off, cont, input') ->
-        Parse (off, bind cont f, input')
+    | Match (x, off) -> Parse (off, f x, Lazylist.skip off input)
+    | Parse (off, cont, input') -> Parse (off, bind cont f, input')
 
   (* let alt (P a) (P b) =
      let inner input =
@@ -65,7 +63,11 @@ module Inner = struct
   let[@inline] alt a b input =
     match parse_raw a input with
     | Match _ as m -> m
-    | Error _ -> b input
+    | Error (err, _) -> (
+        match b input with
+        | Error (err', off) ->
+            Error (Printf.sprintf "Errors: %s and %s" err err', off)
+        | x -> x)
     | _ -> assert false
 end
 
@@ -107,8 +109,7 @@ let eof input =
 
 let any input =
   match Lazylist.first input with
-  | Some c ->
-      Match (c, 1)
+  | Some c -> Match (c, 1)
   | None -> Error ("Unexpected EOF", 1)
 
 let peek input =
