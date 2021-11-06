@@ -59,3 +59,16 @@ val space : char t
 val token : 'a t -> 'a t
 
 val surround : 'x t -> 'x t -> 'a t -> 'a t
+
+module Expr : sig
+  type assoc = Left | Right | NoAssoc
+
+  type 'a operator =
+    | Prefix of ('a -> 'a) t
+    | Postfix of ('a -> 'a) t
+    | Infix of ('a -> 'a -> 'a) t * assoc
+
+  type 'a expr_table = 'a operator list list
+
+  val build : 'a expr_table -> 'a t -> 'a t
+end

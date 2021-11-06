@@ -187,3 +187,84 @@ include struct
 end
 
 let surround left right p = left *> p <* right
+
+module Expr = struct
+  type assoc = Left | Right | NoAssoc
+
+  type 'a operator =
+    | Prefix of ('a -> 'a) t
+    | Postfix of ('a -> 'a) t
+    | Infix of ('a -> 'a -> 'a) t * assoc
+
+  type 'a expr_table = 'a operator list list
+
+  type 'a pratt_state = {
+    lassoc : ('a -> 'a -> 'a) t list;
+    rassoc : ('a -> 'a -> 'a) t list;
+    nassoc : ('a -> 'a -> 'a) t list;
+    prefix : ('a -> 'a) t list;
+    postfix : ('a -> 'a) t list;
+  }
+
+  let split_op op acc =
+    match op with
+    | Infix (op, NoAssoc) -> { acc with nassoc = op :: acc.nassoc }
+    | Infix (op, Left) -> { acc with lassoc = op :: acc.lassoc }
+    | Infix (op, Right) -> { acc with rassoc = op :: acc.rassoc }
+    | Prefix op -> { acc with prefix = op :: acc.prefix }
+    | Postfix op -> { acc with postfix = op :: acc.postfix }
+
+  let term_p prefix term postfix =
+    let* prefix in
+    let* term in
+    let+ postfix in
+    postfix (prefix term)
+
+  let rec rassoc_parser1 x rop pre term post =
+    rassoc_parser x rop pre term post <|> pure x
+
+  and rassoc_parser x rop pre term post =
+    let* f = rop in
+    let+ y =
+      let* z = term_p pre term post in
+      rassoc_parser1 z rop pre term post
+    in
+    f x y
+
+  let rec lassoc_parser1 x lop pre term post =
+    lassoc_parser x lop pre term post <|> pure x
+
+  and lassoc_parser x lop pre term post =
+    let* f = lop in
+    let* y = term_p pre term post in
+    lassoc_parser1 (f x y) lop pre term post
+
+  let nassoc_parser x nop pre term post =
+    let* f = nop in
+    let+ y = term_p pre term post in
+    f x y
+
+  let make_parser term ops =
+    let state =
+      List.fold_right split_op ops
+        { rassoc = []; lassoc = []; nassoc = []; prefix = []; postfix = [] }
+    in
+    let rop = choice state.rassoc in
+    let lop = choice state.lassoc in
+    let nop = choice state.nassoc in
+    let preop = choice state.prefix in
+    let postop = choice state.postfix in
+    let pre_parser = preop <|> pure Fun.id in
+    let post_parser = postop <|> pure Fun.id in
+    let* x = term_p pre_parser term post_parser in
+    choice
+      [
+        rassoc_parser x rop pre_parser term post_parser;
+        lassoc_parser x lop pre_parser term post_parser;
+        nassoc_parser x nop pre_parser term post_parser;
+        pure x;
+      ]
+    <?> "operator"
+
+  let build optable atom = List.fold_left make_parser atom optable
+end
